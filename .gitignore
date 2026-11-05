@@ -1,0 +1,22 @@
+# Binaries
+/bin/
+zealot
+*.exe
+
+# Test/coverage artifacts
+*.out
+*.test
+coverage.html
+
+# Generated manifests (zealot generate output)
+/k8s/
+
+# Go workspace
+go.work
+go.work.sum
+
+# Editor/OS noise
+.vscode/
+.idea/
+*.swp
+.DS_Store
