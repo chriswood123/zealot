@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -99,6 +100,17 @@ type Target struct {
 	URL string `yaml:"url"`
 }
 
+// UnmarshalYAML accepts either a bare string (shorthand for url) or the
+// mapping form, so both `targets: [api]` and `targets: [{url: api}]` work.
+func (t *Target) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind == yaml.ScalarNode {
+		t.URL = value.Value
+		return nil
+	}
+	type plain Target
+	return value.Decode((*plain)(t))
+}
+
 // QueryStep queries a backing datastore declared in NodeConfig.Datastores.
 type QueryStep struct {
 	// Datastore names an entry in the node config's datastores map.
@@ -160,6 +172,10 @@ func (c *NodeConfig) Validate() error {
 			return fmt.Errorf("datastore %q: %w", name, err)
 		}
 	}
+	drivers := make(map[string]string, len(c.Datastores))
+	for name, ds := range c.Datastores {
+		drivers[name] = ds.Driver
+	}
 	seen := map[string]bool{}
 	for i, e := range c.Endpoints {
 		if e.Path == "" {
@@ -169,17 +185,107 @@ func (c *NodeConfig) Validate() error {
 			return fmt.Errorf("duplicate endpoint path %q", e.Path)
 		}
 		seen[e.Path] = true
-		for j, s := range e.Pipeline {
-			if s.Type() == "unknown" {
-				return fmt.Errorf("endpoints[%d].pipeline[%d]: no step kind set", i, j)
-			}
-			if s.Query != nil {
-				if _, ok := c.Datastores[s.Query.Datastore]; !ok {
-					return fmt.Errorf("endpoints[%d].pipeline[%d]: query references undefined datastore %q",
-						i, j, s.Query.Datastore)
-				}
+		if err := ValidateSteps(e.Pipeline, drivers, fmt.Sprintf("endpoints[%d]", i)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ValidateSteps semantically validates pipeline steps: durations and sizes
+// parse, rates are in range, required fields are present, and query steps
+// reference a defined datastore with fields matching its driver. dsDrivers
+// maps datastore name → driver ("postgres"/"redis"); where prefixes errors
+// with their location.
+func ValidateSteps(steps []Step, dsDrivers map[string]string, where string) error {
+	for j, s := range steps {
+		if err := validateStep(s, dsDrivers); err != nil {
+			return fmt.Errorf("%s.pipeline[%d]: %w", where, j, err)
+		}
+	}
+	return nil
+}
+
+func validateStep(s Step, dsDrivers map[string]string) error {
+	switch {
+	case s.Delay != nil:
+		if (s.Delay.Duration == "") == (s.Delay.Distribution == "") {
+			return fmt.Errorf("delay: exactly one of duration or distribution is required")
+		}
+		if s.Delay.Duration != "" {
+			if _, err := time.ParseDuration(s.Delay.Duration); err != nil {
+				return fmt.Errorf("delay: %w", err)
 			}
 		}
+		return ValidateDistribution(s.Delay.Distribution)
+	case s.CPU != nil:
+		if s.CPU.Duration == "" {
+			return fmt.Errorf("cpu: duration is required")
+		}
+		if _, err := time.ParseDuration(s.CPU.Duration); err != nil {
+			return fmt.Errorf("cpu: %w", err)
+		}
+	case s.Call != nil:
+		if len(s.Call.Targets) == 0 {
+			return fmt.Errorf("call: at least one target is required")
+		}
+		for i, t := range s.Call.Targets {
+			if t.URL == "" {
+				return fmt.Errorf("call: target %d: url is required", i)
+			}
+		}
+		if s.Call.OnError != "" && s.Call.OnError != "failFast" && s.Call.OnError != "continue" {
+			return fmt.Errorf("call: onError must be failFast or continue, got %q", s.Call.OnError)
+		}
+	case s.Fault != nil:
+		if s.Fault.Rate < 0 || s.Fault.Rate > 1 {
+			return fmt.Errorf("fault: rate must be between 0 and 1")
+		}
+		if s.Fault.Latency != "" {
+			if _, err := time.ParseDuration(s.Fault.Latency); err != nil {
+				return fmt.Errorf("fault: %w", err)
+			}
+		}
+		if s.Fault.Status != 0 && (s.Fault.Status < 100 || s.Fault.Status > 599) {
+			return fmt.Errorf("fault: status must be 0 or 100-599, got %d", s.Fault.Status)
+		}
+	case s.Respond != nil:
+		if s.Respond.Status != 0 && (s.Respond.Status < 100 || s.Respond.Status > 599) {
+			return fmt.Errorf("respond: status must be 0 or 100-599, got %d", s.Respond.Status)
+		}
+		if s.Respond.BodySize != "" {
+			if _, err := ParseSize(s.Respond.BodySize); err != nil {
+				return fmt.Errorf("respond: %w", err)
+			}
+		}
+	case s.Query != nil:
+		if s.Query.Datastore == "" {
+			return fmt.Errorf("query: datastore is required")
+		}
+		driver, ok := dsDrivers[s.Query.Datastore]
+		if !ok {
+			return fmt.Errorf("query: references undefined datastore %q", s.Query.Datastore)
+		}
+		switch driver {
+		case "postgres":
+			if s.Query.SQL == "" {
+				return fmt.Errorf("query: sql is required for postgres datastore %q", s.Query.Datastore)
+			}
+		case "redis":
+			if s.Query.SQL != "" {
+				return fmt.Errorf("query: sql is not valid for redis datastore %q", s.Query.Datastore)
+			}
+			switch s.Query.Op {
+			case "GET", "SET", "DEL":
+			default:
+				return fmt.Errorf("query: op must be GET, SET or DEL for redis, got %q", s.Query.Op)
+			}
+			if s.Query.Key == "" {
+				return fmt.Errorf("query: key is required for redis %s", s.Query.Op)
+			}
+		}
+	default:
+		return fmt.Errorf("no step kind set")
 	}
 	return nil
 }

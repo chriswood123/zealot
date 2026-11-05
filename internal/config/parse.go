@@ -1,4 +1,4 @@
-package pipeline
+package config
 
 import (
 	"fmt"
@@ -8,6 +8,10 @@ import (
 	"strings"
 	"time"
 )
+
+// Value parsers shared by config validation and pipeline execution. They
+// live in config (not pipeline) so topology validation can use them without
+// an import cycle: pipeline depends on config, never the reverse.
 
 var normalRe = regexp.MustCompile(`^normal\(\s*([^,]+)\s*,\s*([^)]+)\s*\)$`)
 
@@ -51,6 +55,13 @@ func SampleDistribution(spec string) (time.Duration, error) {
 		return lo + time.Duration(rand.Float64()*float64(hi-lo)), nil
 	}
 	return time.ParseDuration(spec)
+}
+
+// ValidateDistribution checks a distribution/fixed-duration spec without
+// sampling it.
+func ValidateDistribution(spec string) error {
+	_, err := SampleDistribution(spec)
+	return err
 }
 
 var sizeRe = regexp.MustCompile(`^(\d+(?:\.\d+)?)\s*(b|kb|mb|gb)?$`)

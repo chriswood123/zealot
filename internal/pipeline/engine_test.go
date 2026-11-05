@@ -18,6 +18,17 @@ import (
 
 func newEngine() *Engine { return NewEngine("test", nil) }
 
+func TestRenderTemplate(t *testing.T) {
+	fixed := func(int) int { return 42 }
+	got := renderTemplate("item:{rand:1000}:{rand:10}", fixed)
+	if got != "item:42:42" {
+		t.Fatalf("got %q", got)
+	}
+	if s := renderTemplate("plain", fixed); s != "plain" {
+		t.Fatalf("got %q", s)
+	}
+}
+
 func runPipeline(e *Engine, steps []config.Step) (*Result, error) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	return e.Run(context.Background(), "/", steps, req)

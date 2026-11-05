@@ -1,4 +1,4 @@
-package pipeline
+package config
 
 import (
 	"testing"
@@ -48,7 +48,7 @@ func TestSampleDistributionUniform(t *testing.T) {
 
 func TestSampleDistributionInvalid(t *testing.T) {
 	for _, spec := range []string{"normal(50ms)", "uniform(10ms)", "bogus"} {
-		if _, err := SampleDistribution(spec); err == nil {
+		if err := ValidateDistribution(spec); err == nil {
 			t.Fatalf("expected error for %q", spec)
 		}
 	}
@@ -73,17 +73,5 @@ func TestParseSize(t *testing.T) {
 	}
 	if _, err := ParseSize("ten"); err == nil {
 		t.Fatal("expected error for invalid size")
-	}
-}
-
-func TestRenderTemplate(t *testing.T) {
-	fixed := func(int) int { return 42 }
-	got := renderTemplate("item:{rand:1000}:{rand:10}", fixed)
-	if got != "item:42:42" {
-		t.Fatalf("got %q", got)
-	}
-	// No template left untouched.
-	if s := renderTemplate("plain", fixed); s != "plain" {
-		t.Fatalf("got %q", s)
 	}
 }

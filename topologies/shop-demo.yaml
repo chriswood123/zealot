@@ -1,0 +1,66 @@
+# The reference demo topology: a small shop with fan-out, cache-aside reads
+# and a flaky auth service. Validate it:
+#
+#   zealot validate topologies/shop-demo.yaml
+#
+# (M4 will generate Kubernetes manifests from this file.)
+version: "1"
+name: shop-demo
+namespace: zealot-demo
+
+datastores:
+  postgres:
+    image: postgres:16
+    database: shop
+    seedSQL: |
+      CREATE TABLE IF NOT EXISTS items (
+          id    integer PRIMARY KEY,
+          name  text NOT NULL,
+          price numeric(10,2) NOT NULL
+      );
+      INSERT INTO items
+      SELECT g, 'item-' || g, (random() * 100)::numeric(10,2)
+      FROM generate_series(1, 100000) AS g
+      ON CONFLICT DO NOTHING;
+  redis:
+    image: redis:7
+
+services:
+  frontend:
+    replicas: 2
+    resources: { cpu: 250m, memory: 128Mi }
+    endpoints:
+      - path: /
+        pipeline:
+          - delay: { distribution: "normal(20ms,5ms)" }
+          - call: { targets: [api, cart], parallel: true }
+          - respond: { status: 200, body: '{"service":"frontend"}', bodySize: 2kb }
+
+  api:
+    replicas: 3
+    endpoints:
+      - path: /
+        pipeline:
+          - query: { datastore: redis, op: GET, key: "item:{rand:1000}" }
+          - query: { datastore: postgres, sql: "SELECT * FROM items WHERE id = {rand:1000} + 1" }
+          - call: { targets: [auth] }
+          - respond: { status: 200, body: '{"service":"api"}' }
+
+  cart:
+    endpoints:
+      - path: /
+        pipeline:
+          - cpu: { duration: 8ms }
+          - respond: { status: 200, body: '{"service":"cart"}' }
+
+  auth:
+    endpoints:
+      - path: /
+        pipeline:
+          - cpu: { duration: 10ms }
+          - fault: { rate: 0.02, status: 500 }   # 2% errors for resilience demos
+          - respond: { status: 200, body: '{"service":"auth"}' }
+
+load:
+  entrypoint: frontend
+  k6: { vus: 50, duration: 5m }

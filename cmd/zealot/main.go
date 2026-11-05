@@ -11,15 +11,17 @@ import (
 	"github.com/chriswood123/zealot/internal/config"
 	"github.com/chriswood123/zealot/internal/metrics"
 	"github.com/chriswood123/zealot/internal/server"
+	"github.com/chriswood123/zealot/internal/topology"
 )
 
 const usage = `zealot - config-driven microservice simulator
 
 Usage:
   zealot serve --config <node.yaml>   Run one node
+  zealot validate <topology.yaml>     Validate a topology file
   zealot version                      Print version
 
-Future milestones: validate, generate (see PLAN.md).
+Future milestones: generate (see PLAN.md).
 `
 
 func main() {
@@ -34,8 +36,12 @@ func main() {
 		}
 	case "version":
 		fmt.Println(metrics.Version)
-	case "validate", "generate":
-		fatal(fmt.Errorf("%q not yet implemented (M3/M4, see PLAN.md)", os.Args[1]))
+	case "validate":
+		if err := validate(os.Args[2:]); err != nil {
+			fatal(err)
+		}
+	case "generate":
+		fatal(fmt.Errorf("%q not yet implemented (M4, see PLAN.md)", os.Args[1]))
 	case "-h", "--help", "help":
 		fmt.Print(usage)
 	default:
@@ -73,6 +79,26 @@ func serve(args []string) error {
 	}
 	defer srv.Close()
 	return srv.ListenAndServe()
+}
+
+func validate(args []string) error {
+	if len(args) != 1 {
+		return fmt.Errorf("usage: zealot validate <topology.yaml>")
+	}
+	top, err := topology.Load(args[0])
+	if err != nil {
+		return err
+	}
+	if errs := top.Validate(); len(errs) > 0 {
+		fmt.Fprintf(os.Stderr, "%s: %d validation error(s):\n", args[0], len(errs))
+		for _, e := range errs {
+			fmt.Fprintf(os.Stderr, "  - %v\n", e)
+		}
+		return fmt.Errorf("topology invalid")
+	}
+	fmt.Printf("topology %q valid: %d services, %d datastores, namespace %q\n",
+		top.Name, len(top.Services), len(top.Datastores), top.Namespace)
+	return nil
 }
 
 func fatal(err error) {

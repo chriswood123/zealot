@@ -173,7 +173,12 @@ service names resolve via cluster DNS (`http://api.zealot-demo.svc.cluster.local
    `fault` step (landed in M1), `zealot_datastore_duration_seconds` live,
    docker-compose backing services (seeded 100k-row Postgres), miniredis unit
    tests + env-guarded Postgres integration test
-3. **M3 — Topology**: schema, parser, `validate` (incl. cycle detection)
+3. **M3 — Topology** ✅ (2026-11-05): schema v1 (`internal/topology`),
+   `zealot validate` with aggregated errors — DNS-1123 names, resource
+   quantities, reference checks (call targets, query datastores,
+   load entrypoint), deep step validation (shared with node configs via
+   `config.ValidateSteps`), DFS cycle detection, scalar call-target
+   shorthand; example `topologies/shop-demo.yaml`; unit + bats coverage
 4. **M4 — Generator**: k8s rendering with golden-file tests, Dockerfile, Makefile
 5. **M5 — Demo kit**: example `shop-demo` topology, k6 script, README walkthrough
 6. **M6 — SPEC.md**: freeze behavior/metrics spec v1 for future language ports

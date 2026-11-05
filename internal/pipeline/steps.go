@@ -34,7 +34,7 @@ func (e *Engine) execDelay(ctx context.Context, s *config.DelayStep) error {
 
 func delayDuration(s *config.DelayStep) (time.Duration, error) {
 	if s.Distribution != "" {
-		return SampleDistribution(s.Distribution)
+		return config.SampleDistribution(s.Distribution)
 	}
 	if s.Duration == "" {
 		return 0, fmt.Errorf("delay step: duration or distribution required")
@@ -155,7 +155,7 @@ func (e *Engine) execRespond(s *config.RespondStep, res *Result) error {
 	}
 	res.Body = []byte(renderTemplate(s.Body, e.randInt))
 	if s.BodySize != "" {
-		n, err := ParseSize(s.BodySize)
+		n, err := config.ParseSize(s.BodySize)
 		if err != nil {
 			return fmt.Errorf("respond step: %w", err)
 		}

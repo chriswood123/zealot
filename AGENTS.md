@@ -21,9 +21,9 @@ code branches. Sources of truth: `PLAN.md` (roadmap, milestones M1–M6) and
   and must stay identical for future language ports. Never rename; additive
   changes only.
 - **Milestone gating**: don't implement ahead-of-milestone features
-  (topology, generator) without the user asking; mark milestones done in
-  `PLAN.md` when landed. M1+M2 are complete.
-- `validate`/`generate` subcommands are stubs that error by design until M3/M4.
+  (generator, demo kit) without the user asking; mark milestones done in
+  `PLAN.md` when landed. M1–M3 are complete.
+- `generate` subcommand is a stub that errors by design until M4.
 
 ## Architecture notes (non-obvious)
 
@@ -43,6 +43,13 @@ code branches. Sources of truth: `PLAN.md` (roadmap, milestones M1–M6) and
   connections fail fast at startup (`server.New` returns error) — nodes
   refuse to serve with an unreachable backing service.
 - Redis `GET` misses return nil by design (miss ≠ failure under load).
+- Duration/size parsers (`SampleDistribution`, `ParseSize`) live in `config`,
+  not `pipeline`: topology validation needs them and `pipeline` already
+  depends on `config`. `config.ValidateSteps` is the shared deep step
+  validator used by both node configs and topologies.
+- Topology call targets accept scalars (`targets: [api]`) via custom
+  `Target.UnmarshalYAML` — keep both forms working. Cycles are hard errors
+  (no runtime depth limit exists).
 
 ## Operational gotchas
 

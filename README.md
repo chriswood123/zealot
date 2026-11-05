@@ -9,9 +9,9 @@ Every node's behaviour — latency, CPU work, upstream calls, faults, response
 shape — is defined entirely in YAML, so arbitrary service topologies can be
 assembled from a single binary.
 
-> Status: **M2 complete** (core node + Postgres/Redis query steps). See
-> [PLAN.md](PLAN.md) for the full roadmap (topology files, Kubernetes
-> generator, k6 demo kit).
+> Status: **M3 complete** (core node, Postgres/Redis query steps, topology
+> schema + validation). See [PLAN.md](PLAN.md) for the full roadmap
+> (Kubernetes generator, k6 demo kit).
 
 ## Build
 
@@ -302,9 +302,40 @@ future language ports:
 
 ```
 zealot serve --config <node.yaml>   Run one node
+zealot validate <topology.yaml>     Validate a topology file
 zealot version                      Print version
-zealot validate / generate          Coming in M3/M4 (see PLAN.md)
+zealot generate                     Coming in M4 (see PLAN.md)
 ```
+
+## Topology files
+
+A **topology** describes a whole microservices graph in one YAML file —
+services (each a zealot instance), datastores, and the load entrypoint. See
+[topologies/shop-demo.yaml](topologies/shop-demo.yaml) for the reference
+example: fan-out to `api`+`cart`, cache-aside reads, and a flaky `auth`.
+
+```sh
+zealot validate topologies/shop-demo.yaml
+# topology "shop-demo" valid: 4 services, 2 datastores, namespace "zealot-demo"
+```
+
+Validation covers (all problems reported in one run):
+
+- schema: `version: "1"`, DNS-1123 names (Kubernetes-safe), endpoint path
+  uniqueness, resource quantities (`cpu: 250m`, `memory: 128Mi`)
+- **references**: `call` targets must name services in the topology (full
+  URLs pass through as external), `query` steps must reference declared
+  datastores with driver-appropriate fields (`sql` for postgres, `op`+`key`
+  for redis)
+- **step semantics**: durations/distributions parse, fault rates in `[0,1]`,
+  valid status codes, `onError` values
+- **call cycles**: rejected outright (`a -> b -> a`) — with no request depth
+  limit, a cycle would recurse forever under load
+- `load.entrypoint` must be a real service
+
+Defaults applied during validation: `namespace` ← `name`, `replicas` ← 1,
+datastore `type` inferred from the name for `postgres`/`redis`, images
+default to `postgres:16` / `redis:7`.
 
 ## Development
 
