@@ -11,6 +11,9 @@ coverage.html
 # Generated manifests (zealot generate output)
 /k8s/
 
+# Vendored bats-core (make e2e bootstrap)
+/e2e/.bats/
+
 # Go workspace
 go.work
 go.work.sum

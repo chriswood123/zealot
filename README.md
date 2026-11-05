@@ -259,13 +259,15 @@ Postgres is seeded on first start from `examples/db/init.sql` (items table,
 
 ## Chaining instances
 
-Run several nodes and wire them via `call` targets. Example:
+Run several nodes and wire them via `call` targets. A ready-made pair lives
+in `examples/chaining/`:
 
 ```sh
 # terminal 1
-./bin/zealot serve --config backend.yaml     # service: backend, listen: :8081
+./bin/zealot serve --config examples/chaining/backend.yaml   # :8081
 # terminal 2
-./bin/zealot serve --config frontend.yaml    # calls localhost:8081
+./bin/zealot serve --config examples/chaining/frontend.yaml  # :8080, fans out to backend
+curl -H 'X-Request-ID: demo-1' localhost:8080/
 ```
 
 Every `call` propagates `X-Request-ID` (incoming value honoured, otherwise
@@ -308,9 +310,20 @@ zealot validate / generate          Coming in M3/M4 (see PLAN.md)
 
 ```sh
 make test     # go test ./... (unit; miniredis, no docker needed)
+make e2e      # bats end-to-end tests against examples/ (see below)
 make vet      # go vet ./...
 make run      # build + serve examples/node.yaml
 ```
+
+### End-to-end tests
+
+`make e2e` runs [bats](https://github.com/bats-core/bats-core) tests in
+`e2e/` that boot the real example configs (ports rewritten to 18080–18082 so
+they never clash with your own instances) and assert behaviour end to end:
+the JSON envelope, request-ID propagation through fan-out, upstream and
+datastore metrics, and fail-fast startup with a dead datastore. bats-core is
+vendored into `e2e/.bats` on first run — needs `git`, `curl` and `jq`; the
+datastore suite also needs `docker` (it brings the compose stack up itself).
 
 Postgres integration test (skipped unless the env var is set; needs
 `docker compose up -d`):

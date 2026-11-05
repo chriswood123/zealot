@@ -1,0 +1,16 @@
+# Backend half of the chaining demo (see frontend.yaml).
+# Serves / (quick) and /work (slower, CPU-bound) so frontend fan-out has
+# targets with visibly different latencies.
+service: backend
+listen: ":8081"
+
+endpoints:
+  - path: /
+    pipeline:
+      - cpu: { duration: 5ms }
+      - respond: { status: 200, body: '{"from":"backend"}' }
+
+  - path: /work
+    pipeline:
+      - cpu: { duration: 20ms }
+      - respond: { status: 200, body: '{"from":"backend","worked":true}' }

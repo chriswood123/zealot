@@ -1,0 +1,22 @@
+# Frontend half of the chaining demo. Run alongside backend.yaml:
+#
+#   ./bin/zealot serve --config examples/chaining/backend.yaml &
+#   ./bin/zealot serve --config examples/chaining/frontend.yaml
+#   curl -H 'X-Request-ID: demo-1' localhost:8080/
+#
+# The request fans out to both backend endpoints in parallel; watch the
+# request ID appear in the backend logs and the upstream metrics on
+# localhost:8080/metrics.
+service: frontend
+listen: ":8080"
+
+endpoints:
+  - path: /
+    pipeline:
+      - delay: { distribution: "normal(20ms,5ms)" }
+      - call:
+          targets:
+            - { url: "localhost:8081" }
+            - { url: "localhost:8081/work" }
+          parallel: true
+      - respond: { status: 200, body: "hello from frontend" }

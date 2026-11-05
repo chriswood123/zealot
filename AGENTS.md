@@ -7,8 +7,11 @@ code branches. Sources of truth: `PLAN.md` (roadmap, milestones M1–M6) and
 
 ## Commands
 
-- `make build` / `make test` / `make vet` / `make run` (serves `examples/node.yaml`)
+- `make build` / `make test` / `make e2e` / `make vet` / `make run` (serves `examples/node.yaml`)
 - Single package: `go test ./internal/pipeline/` — no lint/typecheck step beyond `go vet`
+- `make e2e` runs bats tests in `e2e/` against the real example configs;
+  bats-core is vendored into `e2e/.bats` (gitignored) on first run. E2E ports
+  are 18080–18082 — never use 8080-range inside the suite.
 - First `go mod` operations may stall on slow downloads; module cache is warm now, retry rather than changing proxy config
 
 ## Hard constraints
