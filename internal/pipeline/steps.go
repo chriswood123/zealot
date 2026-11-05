@@ -153,17 +153,14 @@ func (e *Engine) execRespond(s *config.RespondStep, res *Result) error {
 	if s.Status != 0 {
 		res.Status = s.Status
 	}
-	body := renderTemplate(s.Body, e.randInt)
+	res.Body = []byte(renderTemplate(s.Body, e.randInt))
 	if s.BodySize != "" {
 		n, err := ParseSize(s.BodySize)
 		if err != nil {
 			return fmt.Errorf("respond step: %w", err)
 		}
-		if len(body) < n {
-			body += strings.Repeat("x", n-len(body))
-		}
+		res.PadTo = n
 	}
-	res.Body = []byte(body)
 	return nil
 }
 

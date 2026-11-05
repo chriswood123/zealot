@@ -3,9 +3,11 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/chriswood123/zealot/internal/config"
@@ -79,12 +81,50 @@ func (s *Server) handleEndpoint(w http.ResponseWriter, r *http.Request, ep confi
 		s.metrics.ObserveRequest(ep.Path, status, time.Since(start))
 		return
 	}
-	w.Header().Set("Content-Type", "application/octet-stream")
+	body := s.envelope(r, res)
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(res.Status)
-	if len(res.Body) > 0 {
-		_, _ = w.Write(res.Body)
-	}
+	_, _ = w.Write(body)
 	s.metrics.ObserveRequest(ep.Path, res.Status, time.Since(start))
+}
+
+// envelope is the standard JSON response format for every zealot endpoint.
+type envelope struct {
+	Service   string          `json:"service"`
+	RequestID string          `json:"request_id"`
+	Status    int             `json:"status"`
+	Body      json.RawMessage `json:"body,omitempty"`
+	Padding   string          `json:"padding,omitempty"`
+}
+
+// envelope builds the standard JSON response. A body that is itself valid
+// JSON is embedded as-is; anything else becomes a JSON string. If res.PadTo
+// exceeds the envelope size, a padding field expands it to exactly PadTo
+// bytes (never truncates).
+func (s *Server) envelope(r *http.Request, res *pipeline.Result) []byte {
+	env := envelope{
+		Service:   s.cfg.Service,
+		RequestID: reqid.FromContext(r.Context()),
+		Status:    res.Status,
+	}
+	if len(res.Body) > 0 {
+		if json.Valid(res.Body) {
+			env.Body = json.RawMessage(res.Body)
+		} else {
+			// Marshal to get a properly quoted JSON string.
+			b, _ := json.Marshal(string(res.Body))
+			env.Body = b
+		}
+	}
+	out, _ := json.Marshal(env)
+	if res.PadTo > 0 {
+		const fieldOverhead = len(`,"padding":""`)
+		if deficit := res.PadTo - len(out) - fieldOverhead; deficit > 0 {
+			env.Padding = strings.Repeat("x", deficit)
+			out, _ = json.Marshal(env)
+		}
+	}
+	return out
 }
 
 // statusRecorder captures the status code written by downstream handlers for

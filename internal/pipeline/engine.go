@@ -53,6 +53,9 @@ func NewEngine(service string, rec Recorder) *Engine {
 type Result struct {
 	Status int
 	Body   []byte
+	// PadTo asks the server to pad the serialized response to at least this
+	// many bytes (from respond.bodySize); 0 disables padding.
+	PadTo int
 }
 
 // Run executes the pipeline for a request. The request's context carries the

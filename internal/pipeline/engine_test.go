@@ -55,11 +55,11 @@ func TestRespondStep(t *testing.T) {
 	if res.Status != 201 {
 		t.Fatalf("status %d, want 201", res.Status)
 	}
-	if len(res.Body) != 1024 {
-		t.Fatalf("body length %d, want 1024", len(res.Body))
+	if string(res.Body) != "hi" {
+		t.Fatalf("body %q, want %q", res.Body, "hi")
 	}
-	if !strings.HasPrefix(string(res.Body), "hi") {
-		t.Fatalf("body %q does not start with %q", res.Body[:2], "hi")
+	if res.PadTo != 1024 {
+		t.Fatalf("PadTo %d, want 1024", res.PadTo)
 	}
 }
 

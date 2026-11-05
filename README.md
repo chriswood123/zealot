@@ -152,7 +152,7 @@ to make injected errors stick, or before it to model recoverable degradation.
 ### `respond`
 
 Sets the HTTP response. Optional everywhere: a pipeline without it returns
-`200` with an empty body.
+`200` with an empty `body`.
 
 ```yaml
 - respond: { status: 200, body: '{"ok":true}' }
@@ -162,10 +162,39 @@ Sets the HTTP response. Optional everywhere: a pipeline without it returns
 
 - `status` — HTTP status code; when omitted the current status (default 200,
   possibly set by an earlier `fault`) is kept.
-- `body` — response payload; supports `{rand:N}` templates.
-- `bodySize` — pads the body with `x` characters to **at least** this size
-  (`512`, `2kb`, `1.5mb`), for simulating payload-heavy endpoints. A body
-  already larger than `bodySize` is left untouched.
+- `body` — response payload; supports `{rand:N}` templates. A body that is
+  itself valid JSON is embedded **as JSON** in the response envelope;
+  anything else becomes a JSON string.
+- `bodySize` — pads the serialized response to **at least** this size (`512`,
+  `2kb`, `1.5mb`) via a JSON `padding` field, for simulating payload-heavy
+  endpoints. If the envelope alone is already larger, nothing is added.
+
+## Response format
+
+Every endpoint responds `Content-Type: application/json` with a standard
+envelope:
+
+```json
+{
+  "service": "frontend",
+  "request_id": "e5540990080781f26545074c8380df4f",
+  "status": 200,
+  "body": "hello from frontend"
+}
+```
+
+- `service` — this instance's configured name
+- `request_id` — the propagated `X-Request-ID`
+- `status` — mirrors the HTTP status code
+- `body` — your `respond` body (raw JSON if it parses, otherwise a string)
+- `padding` — filler (`x` characters), present only when `bodySize` demands
+  a larger response
+
+Example with a JSON body (`body: '{"ok":true}'`):
+
+```json
+{"service":"frontend","request_id":"...","status":200,"body":{"ok":true}}
+```
 
 ### `query`
 
