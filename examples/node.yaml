@@ -1,0 +1,19 @@
+# Example node config for `zealot serve --config examples/node.yaml`.
+# Two chained instances: run this one as "frontend" and a second with
+# service: backend / listen: :8081 to see call fan-out and request-ID
+# propagation.
+service: frontend
+listen: ":8080"
+
+endpoints:
+  - path: /
+    pipeline:
+      - delay: { distribution: "normal(20ms,5ms)" }
+      - cpu: { duration: 5ms }
+      # Uncomment with a second zealot instance running on :8081:
+      # - call: { targets: [{ url: "localhost:8081" }], onError: continue }
+      - respond: { status: 200, body: "hello from frontend", bodySize: 1kb }
+
+  - path: /fast
+    pipeline:
+      - respond: { status: 200, body: '{"ok":true}' }
