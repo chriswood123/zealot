@@ -16,7 +16,12 @@ import (
 func testServer(t *testing.T, cfg *config.NodeConfig) *httptest.Server {
 	t.Helper()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return httptest.NewServer(New(cfg, log).Handler())
+	srv, err := New(cfg, log)
+	if err != nil {
+		t.Fatalf("server.New: %v", err)
+	}
+	t.Cleanup(func() { _ = srv.Close() })
+	return httptest.NewServer(srv.Handler())
 }
 
 func TestHealthz(t *testing.T) {

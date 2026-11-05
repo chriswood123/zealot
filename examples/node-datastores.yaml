@@ -1,0 +1,28 @@
+# Node config exercising query steps against the docker-compose backing
+# services. Start them first: docker compose up -d
+service: api
+listen: ":8082"
+
+datastores:
+  postgres:
+    driver: postgres
+    dsn: "postgres://zealot:zealot@localhost:5432/shop?sslmode=disable"
+    maxConns: 20
+  redis:
+    driver: redis
+    addr: "localhost:6379"
+
+endpoints:
+  # Cache-aside read path: redis GET (mostly misses until /cache-write warms
+  # the cache), then a postgres point lookup.
+  - path: /item
+    pipeline:
+      - query: { datastore: redis, op: GET, key: "item:{rand:1000}" }
+      - query: { datastore: postgres, sql: "SELECT * FROM items WHERE id = {rand:1000} + 1" }
+      - respond: { status: 200, body: '{"endpoint":"item"}' }
+
+  # Warm the cache.
+  - path: /cache-write
+    pipeline:
+      - query: { datastore: redis, op: SET, key: "item:{rand:1000}", value: '{"cached":true}' }
+      - respond: { status: 200, body: '{"written":true}' }

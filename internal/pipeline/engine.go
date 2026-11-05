@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/chriswood123/zealot/internal/config"
+	"github.com/chriswood123/zealot/internal/datastore"
 )
 
 // Recorder observes step and upstream metrics. Implemented by the metrics
@@ -17,6 +18,7 @@ import (
 type Recorder interface {
 	ObserveStep(endpoint, stepType, target string, d time.Duration)
 	IncUpstream(target string, status int)
+	ObserveDatastore(datastore, op string, d time.Duration)
 }
 
 // NoopRecorder discards all observations.
@@ -24,12 +26,14 @@ type NoopRecorder struct{}
 
 func (NoopRecorder) ObserveStep(string, string, string, time.Duration) {}
 func (NoopRecorder) IncUpstream(string, int)                           {}
+func (NoopRecorder) ObserveDatastore(string, string, time.Duration)    {}
 
 // Engine runs pipelines for one service instance.
 type Engine struct {
 	service string
 	rec     Recorder
 	client  *http.Client
+	stores  map[string]datastore.Datastore
 	// randInt renders {rand:N} templates; injectable for tests.
 	randInt func(n int) int
 }
@@ -47,6 +51,12 @@ func NewEngine(service string, rec Recorder) *Engine {
 		},
 		randInt: defaultRandInt,
 	}
+}
+
+// SetStores attaches named datastore connections for query steps. Call once
+// at startup, before serving.
+func (e *Engine) SetStores(stores map[string]datastore.Datastore) {
+	e.stores = stores
 }
 
 // Result is the outcome of executing a pipeline.
@@ -114,10 +124,27 @@ func (e *Engine) execStep(ctx context.Context, step config.Step, req *http.Reque
 	case step.Respond != nil:
 		return e.execRespond(step.Respond, res)
 	case step.Query != nil:
-		return fmt.Errorf("query step not yet implemented (M2)")
+		return e.execQuery(ctx, step.Query)
 	default:
 		return fmt.Errorf("unknown step")
 	}
+}
+
+// execQuery renders templates and runs one query against a configured
+// datastore, recording zealot_datastore_duration_seconds.
+func (e *Engine) execQuery(ctx context.Context, s *config.QueryStep) error {
+	ds, ok := e.stores[s.Datastore]
+	if !ok {
+		return fmt.Errorf("datastore %q not configured", s.Datastore)
+	}
+	q := *s // copy before rendering so the config stays immutable
+	q.SQL = renderTemplate(q.SQL, e.randInt)
+	q.Key = renderTemplate(q.Key, e.randInt)
+	q.Value = renderTemplate(q.Value, e.randInt)
+	start := time.Now()
+	err := ds.Exec(ctx, &q)
+	e.rec.ObserveDatastore(s.Datastore, datastore.Op(&q), time.Since(start))
+	return err
 }
 
 // failFastError wraps an error from a call step; execCall applies policy.

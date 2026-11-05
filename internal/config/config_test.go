@@ -84,3 +84,59 @@ func TestLoadMissingFile(t *testing.T) {
 		t.Fatal("expected error for missing file")
 	}
 }
+
+func TestDatastoreValidation(t *testing.T) {
+	valid := `
+service: x
+listen: ":8080"
+datastores:
+  pg: { driver: postgres, dsn: "postgres://u:p@h/db" }
+  cache: { driver: redis, addr: "h:6379" }
+endpoints:
+  - path: /
+    pipeline:
+      - query: { datastore: pg, sql: "SELECT 1" }
+      - query: { datastore: cache, op: GET, key: "k" }
+      - respond: { status: 200 }
+`
+	if _, err := Load(writeTemp(t, valid)); err != nil {
+		t.Fatalf("valid datastores rejected: %v", err)
+	}
+
+	cases := map[string]string{
+		"unknown driver": `
+service: x
+listen: ":8080"
+datastores: { mongo: { driver: mongodb } }
+endpoints: [{ path: "/", pipeline: [{ respond: { status: 200 } }] }]
+`,
+		"postgres missing dsn": `
+service: x
+listen: ":8080"
+datastores: { pg: { driver: postgres } }
+endpoints: [{ path: "/", pipeline: [{ respond: { status: 200 } }] }]
+`,
+		"redis missing addr": `
+service: x
+listen: ":8080"
+datastores: { cache: { driver: redis } }
+endpoints: [{ path: "/", pipeline: [{ respond: { status: 200 } }] }]
+`,
+		"query references undefined datastore": `
+service: x
+listen: ":8080"
+datastores: { pg: { driver: postgres, dsn: "postgres://u:p@h/db" } }
+endpoints:
+  - path: /
+    pipeline:
+      - query: { datastore: cache, op: GET, key: "k" }
+`,
+	}
+	for name, yamlDoc := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := Load(writeTemp(t, yamlDoc)); err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
+	}
+}

@@ -3,6 +3,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/chriswood123/zealot/internal/config"
+	"github.com/chriswood123/zealot/internal/datastore"
 	"github.com/chriswood123/zealot/internal/metrics"
 	"github.com/chriswood123/zealot/internal/pipeline"
 	"github.com/chriswood123/zealot/internal/reqid"
@@ -22,17 +24,46 @@ type Server struct {
 	engine  *pipeline.Engine
 	metrics *metrics.Metrics
 	log     *slog.Logger
+	stores  map[string]datastore.Datastore
 }
 
-// New builds a Server from a node config.
-func New(cfg *config.NodeConfig, log *slog.Logger) *Server {
+// New builds a Server from a node config. Configured datastores are
+// connected (and pinged) eagerly: a node with an unreachable backing
+// service fails to start rather than failing per-request.
+func New(cfg *config.NodeConfig, log *slog.Logger) (*Server, error) {
+	log = log.With("service", cfg.Service)
+	stores := map[string]datastore.Datastore{}
+	for name, dsc := range cfg.Datastores {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ds, err := datastore.Connect(ctx, name, dsc)
+		cancel()
+		if err != nil {
+			for _, s := range stores {
+				_ = s.Close()
+			}
+			return nil, err
+		}
+		log.Info("datastore connected", "name", name, "driver", dsc.Driver)
+		stores[name] = ds
+	}
 	m := metrics.New(cfg.Service)
+	engine := pipeline.NewEngine(cfg.Service, m)
+	engine.SetStores(stores)
 	return &Server{
 		cfg:     cfg,
-		engine:  pipeline.NewEngine(cfg.Service, m),
+		engine:  engine,
 		metrics: m,
-		log:     log.With("service", cfg.Service),
+		log:     log,
+		stores:  stores,
+	}, nil
+}
+
+// Close releases datastore connections.
+func (s *Server) Close() error {
+	for _, ds := range s.stores {
+		_ = ds.Close()
 	}
+	return nil
 }
 
 // Handler returns the root handler with all middleware applied.

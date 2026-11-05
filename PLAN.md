@@ -168,8 +168,11 @@ service names resolve via cluster DNS (`http://api.zealot-demo.svc.cluster.local
    (`delay`, `cpu`, `call`, `respond` + `fault` landed early), request-ID middleware,
    `/healthz`, `/metrics`, unit tests, two-instance smoke test verified
    (request-ID propagation, parallel fan-out, spec metrics)
-2. **M2 — Datastores & chaos**: `query` step (Postgres via pgx, Redis via
-   go-redis, both pooled) + `fault` step
+2. **M2 — Datastores & chaos** ✅ (2026-11-05): `query` step (Postgres via
+   pgxpool, Redis via go-redis, both pooled, startup fail-fast connect),
+   `fault` step (landed in M1), `zealot_datastore_duration_seconds` live,
+   docker-compose backing services (seeded 100k-row Postgres), miniredis unit
+   tests + env-guarded Postgres integration test
 3. **M3 — Topology**: schema, parser, `validate` (incl. cycle detection)
 4. **M4 — Generator**: k8s rendering with golden-file tests, Dockerfile, Makefile
 5. **M5 — Demo kit**: example `shop-demo` topology, k6 script, README walkthrough

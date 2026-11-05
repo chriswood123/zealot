@@ -15,8 +15,25 @@ type NodeConfig struct {
 	Service string `yaml:"service"`
 	// Listen is the address the HTTP server binds to (e.g. ":8080").
 	Listen string `yaml:"listen"`
+	// Datastores are named backing-service connections this node may query.
+	Datastores map[string]Datastore `yaml:"datastores"`
 	// Endpoints map request paths to pipelines.
 	Endpoints []Endpoint `yaml:"endpoints"`
+}
+
+// Datastore configures one backing-service connection.
+type Datastore struct {
+	// Driver is "postgres" or "redis".
+	Driver string `yaml:"driver"`
+	// DSN is the Postgres connection string, e.g.
+	// "postgres://user:pass@host:5432/db?sslmode=disable".
+	DSN string `yaml:"dsn"`
+	// Addr, Password and DB configure Redis ("host:6379").
+	Addr     string `yaml:"addr"`
+	Password string `yaml:"password"`
+	DB       int    `yaml:"db"`
+	// MaxConns caps the connection pool (Postgres; 0 = pgx default).
+	MaxConns int `yaml:"maxConns"`
 }
 
 // Endpoint binds a request path to a pipeline.
@@ -82,12 +99,18 @@ type Target struct {
 	URL string `yaml:"url"`
 }
 
-// QueryStep queries a backing datastore. M2 will implement execution.
+// QueryStep queries a backing datastore declared in NodeConfig.Datastores.
 type QueryStep struct {
+	// Datastore names an entry in the node config's datastores map.
 	Datastore string `yaml:"datastore"`
-	Op        string `yaml:"op"`
-	Key       string `yaml:"key"`
-	SQL       string `yaml:"sql"`
+	// Op is the Redis command: GET, SET or DEL. Unused for Postgres.
+	Op string `yaml:"op"`
+	// Key is the Redis key; supports {rand:N} templates.
+	Key string `yaml:"key"`
+	// Value is the Redis SET payload; supports {rand:N} templates.
+	Value string `yaml:"value"`
+	// SQL is a Postgres query; supports {rand:N} templates.
+	SQL string `yaml:"sql"`
 }
 
 // FaultStep injects errors or extra latency with a probability.
@@ -132,6 +155,11 @@ func (c *NodeConfig) Validate() error {
 	if len(c.Endpoints) == 0 {
 		return fmt.Errorf("at least one endpoint is required")
 	}
+	for name, ds := range c.Datastores {
+		if err := ds.validate(); err != nil {
+			return fmt.Errorf("datastore %q: %w", name, err)
+		}
+	}
 	seen := map[string]bool{}
 	for i, e := range c.Endpoints {
 		if e.Path == "" {
@@ -145,7 +173,29 @@ func (c *NodeConfig) Validate() error {
 			if s.Type() == "unknown" {
 				return fmt.Errorf("endpoints[%d].pipeline[%d]: no step kind set", i, j)
 			}
+			if s.Query != nil {
+				if _, ok := c.Datastores[s.Query.Datastore]; !ok {
+					return fmt.Errorf("endpoints[%d].pipeline[%d]: query references undefined datastore %q",
+						i, j, s.Query.Datastore)
+				}
+			}
 		}
+	}
+	return nil
+}
+
+func (d Datastore) validate() error {
+	switch d.Driver {
+	case "postgres":
+		if d.DSN == "" {
+			return fmt.Errorf("dsn is required for postgres")
+		}
+	case "redis":
+		if d.Addr == "" {
+			return fmt.Errorf("addr is required for redis")
+		}
+	default:
+		return fmt.Errorf("driver must be %q or %q, got %q", "postgres", "redis", d.Driver)
 	}
 	return nil
 }

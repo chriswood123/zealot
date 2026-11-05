@@ -1,6 +1,6 @@
 # Binaries
 /bin/
-zealot
+/zealot
 *.exe
 
 # Test/coverage artifacts

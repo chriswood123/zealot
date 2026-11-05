@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/chriswood123/zealot/internal/config"
+	"github.com/chriswood123/zealot/internal/datastore"
 	"github.com/chriswood123/zealot/internal/reqid"
 )
 
@@ -186,11 +187,73 @@ func TestFaultStepNever(t *testing.T) {
 	}
 }
 
-func TestQueryStepNotImplemented(t *testing.T) {
-	steps := []config.Step{{Query: &config.QueryStep{Datastore: "redis", Op: "GET"}}}
+// fakeStore records queries and can be programmed to fail.
+type fakeStore struct {
+	queries []*config.QueryStep
+	err     error
+}
+
+func (f *fakeStore) Exec(_ context.Context, q *config.QueryStep) error {
+	f.queries = append(f.queries, q)
+	return f.err
+}
+func (f *fakeStore) Close() error { return nil }
+
+func TestQueryStepExecutes(t *testing.T) {
+	store := &fakeStore{}
+	e := newEngine()
+	e.randInt = func(int) int { return 7 }
+	e.SetStores(map[string]datastore.Datastore{"pg": store})
+
+	steps := []config.Step{{Query: &config.QueryStep{
+		Datastore: "pg", SQL: "SELECT * FROM items WHERE id = {rand:1000}",
+	}}}
+	if _, err := runPipeline(e, steps); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(store.queries) != 1 {
+		t.Fatalf("store saw %d queries, want 1", len(store.queries))
+	}
+	if got := store.queries[0].SQL; got != "SELECT * FROM items WHERE id = 7" {
+		t.Fatalf("sql %q, want {rand:1000} rendered to 7", got)
+	}
+}
+
+func TestQueryStepUnknownDatastore(t *testing.T) {
+	steps := []config.Step{{Query: &config.QueryStep{Datastore: "nope", Op: "GET"}}}
 	_, err := runPipeline(newEngine(), steps)
-	if err == nil || !strings.Contains(err.Error(), "M2") {
-		t.Fatalf("expected not-implemented error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), `datastore "nope" not configured`) {
+		t.Fatalf("expected unknown-datastore error, got %v", err)
+	}
+}
+
+func TestQueryStepRecordsDatastoreMetric(t *testing.T) {
+	rec := &recordingRecorder{}
+	e := NewEngine("svc", rec)
+	e.SetStores(map[string]datastore.Datastore{"cache": &fakeStore{}})
+
+	steps := []config.Step{{Query: &config.QueryStep{Datastore: "cache", Op: "GET", Key: "k"}}}
+	if _, err := runPipeline(e, steps); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(rec.datastores) != 1 {
+		t.Fatalf("recorded %d datastore observations, want 1", len(rec.datastores))
+	}
+	d := rec.datastores[0]
+	if d.name != "cache" || d.op != "get" {
+		t.Fatalf("unexpected datastore record %+v", d)
+	}
+}
+
+func TestQueryStepStoreErrorFailsPipeline(t *testing.T) {
+	e := newEngine()
+	e.SetStores(map[string]datastore.Datastore{"pg": &fakeStore{err: errors.New("boom")}})
+	steps := []config.Step{
+		{Query: &config.QueryStep{Datastore: "pg", SQL: "SELECT 1"}},
+		{Respond: &config.RespondStep{Status: 200}},
+	}
+	if _, err := runPipeline(e, steps); err == nil {
+		t.Fatal("expected store error to fail the pipeline")
 	}
 }
 
@@ -211,7 +274,8 @@ func TestEngineRecordsStepMetrics(t *testing.T) {
 }
 
 type recordingRecorder struct {
-	steps []stepRecord
+	steps      []stepRecord
+	datastores []datastoreRecord
 }
 
 type stepRecord struct {
@@ -219,10 +283,18 @@ type stepRecord struct {
 	d                          time.Duration
 }
 
+type datastoreRecord struct {
+	name, op string
+	d        time.Duration
+}
+
 func (r *recordingRecorder) ObserveStep(endpoint, stepType, target string, d time.Duration) {
 	r.steps = append(r.steps, stepRecord{endpoint, stepType, target, d})
 }
 func (r *recordingRecorder) IncUpstream(string, int) {}
+func (r *recordingRecorder) ObserveDatastore(name, op string, d time.Duration) {
+	r.datastores = append(r.datastores, datastoreRecord{name, op, d})
+}
 
 func Example_sampleTopology() {
 	fmt.Println("pipelines run steps in order: delay -> call -> respond")

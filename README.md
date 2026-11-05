@@ -9,8 +9,9 @@ Every node's behaviour — latency, CPU work, upstream calls, faults, response
 shape — is defined entirely in YAML, so arbitrary service topologies can be
 assembled from a single binary.
 
-> Status: **M1 complete** (core node). See [PLAN.md](PLAN.md) for the full
-> roadmap (topology files, Kubernetes generator, datastore steps, k6 demo kit).
+> Status: **M2 complete** (core node + Postgres/Redis query steps). See
+> [PLAN.md](PLAN.md) for the full roadmap (topology files, Kubernetes
+> generator, k6 demo kit).
 
 ## Build
 
@@ -55,7 +56,7 @@ When a request hits an endpoint, its **pipeline steps run in order**:
 | [`call`](#call) | HTTP GET upstream(s) with optional parallel fan-out | `targets`, `parallel`, `onError` |
 | [`fault`](#fault) | Probabilistic error/latency injection | `rate`, `status`, `latency` |
 | [`respond`](#respond) | Set the response status and body | `status`, `body`, `bodySize` |
-| [`query`](#query) | Postgres/Redis queries | *(M2, not yet implemented)* |
+| [`query`](#query) | Postgres/Redis queries via pooled connections | `datastore`, `op`, `key`, `value`, `sql` |
 
 ### Pipeline semantics
 
@@ -198,14 +199,63 @@ Example with a JSON body (`body: '{"ok":true}'`):
 
 ### `query`
 
-*Defined in the config schema but not yet executed — landing in M2. Using it
-today fails the pipeline with a clear "not yet implemented" error.* It will
-support Postgres (`sql`) and Redis (`op`/`key`) with connection pooling:
+Queries a backing service through a pooled connection. The target must be
+declared in the node config's `datastores` block:
 
 ```yaml
-- query: { datastore: redis, op: GET, key: "item:{rand:1000}" }   # M2
-- query: { datastore: postgres, sql: "SELECT ..." }               # M2
+datastores:
+  postgres:
+    driver: postgres
+    dsn: "postgres://zealot:zealot@localhost:5432/shop?sslmode=disable"
+    maxConns: 20          # pgx pool cap (0 = pgx default)
+  redis:
+    driver: redis
+    addr: "localhost:6379"
+    # password: ""
+    # db: 0
 ```
+
+Postgres — arbitrary SQL, rows consumed and discarded:
+
+```yaml
+- query: { datastore: postgres, sql: "SELECT * FROM items WHERE id = {rand:1000} + 1" }
+```
+
+Redis — `GET`, `SET` or `DEL`:
+
+```yaml
+- query: { datastore: redis, op: GET, key: "item:{rand:1000}" }
+- query: { datastore: redis, op: SET, key: "item:{rand:1000}", value: '{"cached":true}' }
+```
+
+Semantics:
+
+- **Startup fail-fast**: datastores are connected and pinged when the node
+  boots; an unreachable backing service stops the node from starting (exit 1)
+  instead of failing per-request under load.
+- **Cache misses are not errors**: a Redis `GET` on a missing key succeeds
+  silently — misses are normal behaviour in a load test.
+- **Query errors fail the pipeline** (SQL error, unknown op, missing key
+  field): the client gets a 502 and the error is logged with the request ID.
+- `sql`, `key` and `value` all support `{rand:N}` templates, e.g. point
+  lookups across a 100k-row table with `id = {rand:1000} + 1`.
+- Every query records
+  `zealot_datastore_duration_seconds{service,datastore,op}` (`op` is `sql`
+  or the lowercased Redis command) plus the standard per-step metric.
+
+## Local backing services (docker compose)
+
+`docker-compose.yml` provides seeded Postgres and Redis for local testing:
+
+```sh
+docker compose up -d    # postgres:16 (100k seeded items) + redis:7
+./bin/zealot serve --config examples/node-datastores.yaml
+curl localhost:8082/item          # redis GET miss -> postgres lookup
+curl localhost:8082/cache-write   # redis SET
+```
+
+Postgres is seeded on first start from `examples/db/init.sql` (items table,
+100k rows). Reset with `docker compose down -v`.
 
 ## Chaining instances
 
@@ -257,7 +307,15 @@ zealot validate / generate          Coming in M3/M4 (see PLAN.md)
 ## Development
 
 ```sh
-make test     # go test ./...
+make test     # go test ./... (unit; miniredis, no docker needed)
 make vet      # go vet ./...
 make run      # build + serve examples/node.yaml
+```
+
+Postgres integration test (skipped unless the env var is set; needs
+`docker compose up -d`):
+
+```sh
+ZEALOT_TEST_PG_DSN='postgres://zealot:zealot@localhost:5432/shop?sslmode=disable' \
+  go test ./internal/datastore/ -run Postgres
 ```

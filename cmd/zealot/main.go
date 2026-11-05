@@ -67,7 +67,12 @@ func serve(args []string) error {
 	}
 	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(log)
-	return server.New(cfg, log).ListenAndServe()
+	srv, err := server.New(cfg, log)
+	if err != nil {
+		return err
+	}
+	defer srv.Close()
+	return srv.ListenAndServe()
 }
 
 func fatal(err error) {

@@ -17,10 +17,9 @@ code branches. Sources of truth: `PLAN.md` (roadmap, milestones M1–M6) and
   envelope (`service`, `request_id`, `status`, `body`, `padding`) are SPEC v1
   and must stay identical for future language ports. Never rename; additive
   changes only.
-- **Milestone gating**: `query` steps intentionally fail with "not yet
-  implemented (M2)" and a test asserts this. Don't implement M2+ features
-  (datastores, topology, generator) outside their milestone; mark milestones
-  done in `PLAN.md` when landed.
+- **Milestone gating**: don't implement ahead-of-milestone features
+  (topology, generator) without the user asking; mark milestones done in
+  `PLAN.md` when landed. M1+M2 are complete.
 - `validate`/`generate` subcommands are stubs that error by design until M3/M4.
 
 ## Architecture notes (non-obvious)
@@ -35,7 +34,12 @@ code branches. Sources of truth: `PLAN.md` (roadmap, milestones M1–M6) and
   **not** in the `respond` step — the step only sets `Result.PadTo`. Padding
   must keep responses valid JSON.
 - Upstream `call` bodies are drained and discarded by design; downstream
-  content never flows into the response.
+  content never flows into the response. Same for Postgres query rows.
+- `internal/datastore` is a leaf package (depends only on `config`) so
+  `pipeline`, `server` and tests share it without cycles. Datastore
+  connections fail fast at startup (`server.New` returns error) — nodes
+  refuse to serve with an unreachable backing service.
+- Redis `GET` misses return nil by design (miss ≠ failure under load).
 
 ## Operational gotchas
 
@@ -45,3 +49,6 @@ code branches. Sources of truth: `PLAN.md` (roadmap, milestones M1–M6) and
   phantom bugs.
 - Keep scratch configs/binaries for ad-hoc smoke tests under
   `/tmp/opencode/`, not the repo.
+- Postgres integration test is env-guarded (skipped by default):
+  `ZEALOT_TEST_PG_DSN=... go test ./internal/datastore/ -run Postgres`;
+  backing services come from `docker compose up -d`.
