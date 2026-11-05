@@ -12,7 +12,9 @@ endpoints:
       - cpu: { duration: 5ms }
       # Uncomment with a second zealot instance running on :8081:
       # - call: { targets: [{ url: "localhost:8081" }], onError: continue }
-      - respond: { status: 200, body: "hello from frontend", bodySize: 1kb }
+      # Add bodySize (e.g. bodySize: 1kb) to pad the response with filler
+      # bytes, simulating payload-heavy endpoints under load:
+      - respond: { status: 200, body: "hello from frontend" }
 
   - path: /fast
     pipeline:
