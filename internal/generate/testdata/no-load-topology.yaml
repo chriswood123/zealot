@@ -1,0 +1,10 @@
+# Minimal topology with no load block: --nodeport must fail on it.
+version: "1"
+name: no-load
+
+services:
+  web:
+    endpoints:
+      - path: /
+        pipeline:
+          - respond: { status: 200 }

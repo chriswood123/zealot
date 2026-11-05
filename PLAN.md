@@ -179,7 +179,14 @@ service names resolve via cluster DNS (`http://api.zealot-demo.svc.cluster.local
    load entrypoint), deep step validation (shared with node configs via
    `config.ValidateSteps`), DFS cycle detection, scalar call-target
    shorthand; example `topologies/shop-demo.yaml`; unit + bats coverage
-4. **M4 — Generator**: k8s rendering with golden-file tests, Dockerfile, Makefile
+4. **M4 — Generator** ✅ (2026-11-05): `zealot generate` renders Namespace,
+   per-service ConfigMap+Deployment+Service, Postgres (PVC + initdb
+   ConfigMap) and Redis manifests; flags `--out`/`--image`/`--nodeport`
+   (fixed 30080)/`--prometheus-operator` (ServiceMonitors); node configs
+   baked into ConfigMaps carry only referenced datastores; service/datastore
+   name-collision validation; golden-file tests (`go test
+   ./internal/generate/ -update`); multi-stage distroless Dockerfile,
+   `make docker` / `make docker-smoke`; bats e2e
 5. **M5 — Demo kit**: example `shop-demo` topology, k6 script, README walkthrough
 6. **M6 — SPEC.md**: freeze behavior/metrics spec v1 for future language ports
 

@@ -1,9 +1,8 @@
 # The reference demo topology: a small shop with fan-out, cache-aside reads
-# and a flaky auth service. Validate it:
+# and a flaky auth service. Validate it and render Kubernetes manifests:
 #
 #   zealot validate topologies/shop-demo.yaml
-#
-# (M4 will generate Kubernetes manifests from this file.)
+#   zealot generate topologies/shop-demo.yaml --out k8s/
 version: "1"
 name: shop-demo
 namespace: zealot-demo

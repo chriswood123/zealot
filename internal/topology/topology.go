@@ -159,6 +159,11 @@ func (t *Topology) Validate() []error {
 		if !validDNS1123(name) {
 			add("service %q is not a valid DNS-1123 name", name)
 		}
+		// A service and datastore with the same name would collide as
+		// Kubernetes Services in the generated namespace.
+		if _, ok := t.Datastores[name]; ok {
+			add("name %q is used by both a service and a datastore", name)
+		}
 		if svc.Replicas == 0 {
 			svc.Replicas = 1
 		} else if svc.Replicas < 0 {

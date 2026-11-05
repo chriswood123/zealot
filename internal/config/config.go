@@ -17,24 +17,26 @@ type NodeConfig struct {
 	// Listen is the address the HTTP server binds to (e.g. ":8080").
 	Listen string `yaml:"listen"`
 	// Datastores are named backing-service connections this node may query.
-	Datastores map[string]Datastore `yaml:"datastores"`
+	Datastores map[string]Datastore `yaml:"datastores,omitempty"`
 	// Endpoints map request paths to pipelines.
 	Endpoints []Endpoint `yaml:"endpoints"`
 }
 
 // Datastore configures one backing-service connection.
+// The omitempty tags keep generated ConfigMaps (zealot generate) free of
+// empty fields; they have no effect on loading.
 type Datastore struct {
 	// Driver is "postgres" or "redis".
 	Driver string `yaml:"driver"`
 	// DSN is the Postgres connection string, e.g.
 	// "postgres://user:pass@host:5432/db?sslmode=disable".
-	DSN string `yaml:"dsn"`
+	DSN string `yaml:"dsn,omitempty"`
 	// Addr, Password and DB configure Redis ("host:6379").
-	Addr     string `yaml:"addr"`
-	Password string `yaml:"password"`
-	DB       int    `yaml:"db"`
+	Addr     string `yaml:"addr,omitempty"`
+	Password string `yaml:"password,omitempty"`
+	DB       int    `yaml:"db,omitempty"`
 	// MaxConns caps the connection pool (Postgres; 0 = pgx default).
-	MaxConns int `yaml:"maxConns"`
+	MaxConns int `yaml:"maxConns,omitempty"`
 }
 
 // Endpoint binds a request path to a pipeline.
@@ -76,22 +78,22 @@ func (s Step) Type() string {
 // DelayStep sleeps for a fixed duration or samples one from a distribution.
 type DelayStep struct {
 	// Duration is a fixed delay, e.g. "50ms".
-	Duration string `yaml:"duration"`
+	Duration string `yaml:"duration,omitempty"`
 	// Distribution samples a delay, e.g. "normal(50ms,5ms)".
-	Distribution string `yaml:"distribution"`
+	Distribution string `yaml:"distribution,omitempty"`
 }
 
 // CPUStep burns CPU for the given duration via hash iterations.
 type CPUStep struct {
-	Duration string `yaml:"duration"`
+	Duration string `yaml:"duration,omitempty"`
 }
 
 // CallStep calls one or more upstream targets.
 type CallStep struct {
 	Targets  []Target `yaml:"targets"`
-	Parallel bool     `yaml:"parallel"`
+	Parallel bool     `yaml:"parallel,omitempty"`
 	// OnError is "failFast" (default) or "continue".
-	OnError string `yaml:"onError"`
+	OnError string `yaml:"onError,omitempty"`
 }
 
 // Target is an upstream zealot instance or external HTTP service.
@@ -116,28 +118,28 @@ type QueryStep struct {
 	// Datastore names an entry in the node config's datastores map.
 	Datastore string `yaml:"datastore"`
 	// Op is the Redis command: GET, SET or DEL. Unused for Postgres.
-	Op string `yaml:"op"`
+	Op string `yaml:"op,omitempty"`
 	// Key is the Redis key; supports {rand:N} templates.
-	Key string `yaml:"key"`
+	Key string `yaml:"key,omitempty"`
 	// Value is the Redis SET payload; supports {rand:N} templates.
-	Value string `yaml:"value"`
+	Value string `yaml:"value,omitempty"`
 	// SQL is a Postgres query; supports {rand:N} templates.
-	SQL string `yaml:"sql"`
+	SQL string `yaml:"sql,omitempty"`
 }
 
 // FaultStep injects errors or extra latency with a probability.
 type FaultStep struct {
-	Rate    float64 `yaml:"rate"`
-	Status  int     `yaml:"status"`
-	Latency string  `yaml:"latency"`
+	Rate    float64 `yaml:"rate,omitempty"`
+	Status  int     `yaml:"status,omitempty"`
+	Latency string  `yaml:"latency,omitempty"`
 }
 
 // RespondStep terminates the pipeline with a response.
 type RespondStep struct {
-	Status int    `yaml:"status"`
-	Body   string `yaml:"body"`
+	Status int    `yaml:"status,omitempty"`
+	Body   string `yaml:"body,omitempty"`
 	// BodySize pads the body to at least this size (e.g. "2kb").
-	BodySize string `yaml:"bodySize"`
+	BodySize string `yaml:"bodySize,omitempty"`
 }
 
 // Load reads and validates a node config file.

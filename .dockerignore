@@ -1,0 +1,7 @@
+# Keep the Docker build context small.
+.git
+bin
+e2e/.bats
+k8s
+*.log
+/zealot

@@ -1,0 +1,29 @@
+# Exercises generator options: --nodeport entrypoint, ServiceMonitors,
+# resources, a postgres datastore with a non-inferable name (explicit type)
+# and no seedSQL, and a service with no datastore references.
+version: "1"
+name: opts-demo
+
+datastores:
+  pg:
+    type: postgres
+    database: app
+
+services:
+  web:
+    replicas: 2
+    resources: { cpu: 100m, memory: 64Mi }
+    endpoints:
+      - path: /
+        pipeline:
+          - query: { datastore: pg, sql: "SELECT 1" }
+          - respond: { status: 200 }
+
+  worker:
+    endpoints:
+      - path: /
+        pipeline:
+          - respond: { status: 200 }
+
+load:
+  entrypoint: web

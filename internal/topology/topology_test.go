@@ -142,6 +142,18 @@ services:
 `), "duplicate path")
 }
 
+func TestServiceDatastoreNameCollision(t *testing.T) {
+	requireInvalid(t, load(t, `
+version: "1"
+name: demo
+datastores:
+  cache: { type: redis }
+services:
+  cache:
+    endpoints: [{ path: "/", pipeline: [{ respond: { status: 200 } }] }]
+`), "used by both a service and a datastore")
+}
+
 func TestCallTargetMustBeKnownService(t *testing.T) {
 	requireInvalid(t, load(t, `
 version: "1"

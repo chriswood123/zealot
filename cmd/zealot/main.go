@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 
 	"github.com/chriswood123/zealot/internal/config"
+	"github.com/chriswood123/zealot/internal/generate"
 	"github.com/chriswood123/zealot/internal/metrics"
 	"github.com/chriswood123/zealot/internal/server"
 	"github.com/chriswood123/zealot/internal/topology"
@@ -19,9 +21,14 @@ const usage = `zealot - config-driven microservice simulator
 Usage:
   zealot serve --config <node.yaml>   Run one node
   zealot validate <topology.yaml>     Validate a topology file
+  zealot generate <topology.yaml> [flags]   Render Kubernetes manifests
   zealot version                      Print version
 
-Future milestones: generate (see PLAN.md).
+Generate flags:
+  --out <dir>              Output directory (default "k8s")
+  --image <img>            zealot container image (default "zealot:latest")
+  --nodeport               Expose the load entrypoint on NodePort 30080
+  --prometheus-operator    Emit a ServiceMonitor per zealot service
 `
 
 func main() {
@@ -41,7 +48,9 @@ func main() {
 			fatal(err)
 		}
 	case "generate":
-		fatal(fmt.Errorf("%q not yet implemented (M4, see PLAN.md)", os.Args[1]))
+		if err := generateCmd(os.Args[2:]); err != nil {
+			fatal(err)
+		}
 	case "-h", "--help", "help":
 		fmt.Print(usage)
 	default:
@@ -98,6 +107,76 @@ func validate(args []string) error {
 	}
 	fmt.Printf("topology %q valid: %d services, %d datastores, namespace %q\n",
 		top.Name, len(top.Services), len(top.Datastores), top.Namespace)
+	return nil
+}
+
+func generateCmd(args []string) error {
+	var path, out, image string
+	var nodeport, promOp bool
+	for i := 0; i < len(args); i++ {
+		value := func() (string, error) {
+			if i+1 >= len(args) {
+				return "", fmt.Errorf("%s requires a value", args[i])
+			}
+			i++
+			return args[i], nil
+		}
+		switch args[i] {
+		case "--out", "-o":
+			v, err := value()
+			if err != nil {
+				return err
+			}
+			out = v
+		case "--image":
+			v, err := value()
+			if err != nil {
+				return err
+			}
+			image = v
+		case "--nodeport":
+			nodeport = true
+		case "--prometheus-operator":
+			promOp = true
+		default:
+			if strings.HasPrefix(args[i], "-") {
+				return fmt.Errorf("unknown generate flag %q", args[i])
+			}
+			if path != "" {
+				return fmt.Errorf("generate takes exactly one topology file")
+			}
+			path = args[i]
+		}
+	}
+	if path == "" {
+		return fmt.Errorf("usage: zealot generate <topology.yaml> [--out k8s] [--image IMG] [--nodeport] [--prometheus-operator]")
+	}
+	if out == "" {
+		out = "k8s"
+	}
+	top, err := topology.Load(path)
+	if err != nil {
+		return err
+	}
+	if errs := top.Validate(); len(errs) > 0 {
+		fmt.Fprintf(os.Stderr, "%s: %d validation error(s):\n", path, len(errs))
+		for _, e := range errs {
+			fmt.Fprintf(os.Stderr, "  - %v\n", e)
+		}
+		return fmt.Errorf("topology invalid")
+	}
+	paths, err := generate.Write(top, out, generate.Options{
+		Image:              image,
+		NodePort:           nodeport,
+		PrometheusOperator: promOp,
+	})
+	if err != nil {
+		return err
+	}
+	for _, p := range paths {
+		fmt.Println("wrote", p)
+	}
+	fmt.Printf("generated %d manifest files in %s (namespace %q)\n", len(paths), out, top.Namespace)
 	return nil
 }
 

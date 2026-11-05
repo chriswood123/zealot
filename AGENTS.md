@@ -8,6 +8,7 @@ code branches. Sources of truth: `PLAN.md` (roadmap, milestones M1–M6) and
 ## Commands
 
 - `make build` / `make test` / `make e2e` / `make vet` / `make run` (serves `examples/node.yaml`)
+- `make docker` / `make docker-smoke` (image build + container smoke test)
 - Single package: `go test ./internal/pipeline/` — no lint/typecheck step beyond `go vet`
 - `make e2e` runs bats tests in `e2e/` against the real example configs;
   bats-core is vendored into `e2e/.bats` (gitignored) on first run. E2E ports
@@ -21,9 +22,8 @@ code branches. Sources of truth: `PLAN.md` (roadmap, milestones M1–M6) and
   and must stay identical for future language ports. Never rename; additive
   changes only.
 - **Milestone gating**: don't implement ahead-of-milestone features
-  (generator, demo kit) without the user asking; mark milestones done in
-  `PLAN.md` when landed. M1–M3 are complete.
-- `generate` subcommand is a stub that errors by design until M4.
+  (demo kit, SPEC freeze) without the user asking; mark milestones done in
+  `PLAN.md` when landed. M1–M4 are complete.
 
 ## Architecture notes (non-obvious)
 
@@ -50,6 +50,21 @@ code branches. Sources of truth: `PLAN.md` (roadmap, milestones M1–M6) and
 - Topology call targets accept scalars (`targets: [api]`) via custom
   `Target.UnmarshalYAML` — keep both forms working. Cycles are hard errors
   (no runtime depth limit exists).
+- `internal/generate` consumes a **validated** topology (defaults are
+  applied by `topology.Validate`). Output is deterministic — sorted
+  iteration, no timestamps — because golden files live in
+  `internal/generate/testdata/golden/`; regenerate with
+  `go test ./internal/generate/ -update` after intentional changes and
+  review the diff.
+- Generated deployments pin container port 8080 with Services mapping
+  80→8080 so bare `call` targets (`http://api`) resolve via cluster DNS.
+  Postgres credentials are baked in as `zealot`/`zealot` (DSNs in node
+  configs must match the Deployment env); load-entrypoint NodePort is
+  fixed at 30080.
+- `omitempty` tags on `config` step/datastore structs exist to keep
+  generated ConfigMaps free of empty fields; they don't affect loading.
+  Service and datastore names must not collide (they become k8s Services
+  in one namespace) — enforced in `topology.Validate`.
 
 ## Operational gotchas
 

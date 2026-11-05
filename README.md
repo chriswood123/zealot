@@ -9,9 +9,9 @@ Every node's behaviour — latency, CPU work, upstream calls, faults, response
 shape — is defined entirely in YAML, so arbitrary service topologies can be
 assembled from a single binary.
 
-> Status: **M3 complete** (core node, Postgres/Redis query steps, topology
-> schema + validation). See [PLAN.md](PLAN.md) for the full roadmap
-> (Kubernetes generator, k6 demo kit).
+> Status: **M4 complete** (core node, Postgres/Redis query steps, topology
+> schema + validation, Kubernetes manifest generator). See [PLAN.md](PLAN.md)
+> for the full roadmap (k6 demo kit, spec freeze).
 
 ## Build
 
@@ -97,7 +97,7 @@ compute-bound work (serialization, crypto, image processing, ...).
 
 The burn runs on a single goroutine, so it saturates roughly one core. Under
 Kubernetes CPU limits this is what triggers throttling — pair it with a low
-`resources.cpu` limit in the topology (M4) to demo CPU-starved services. The
+`resources.cpu` limit in the topology to demo CPU-starved services. The
 loop checks for client cancellation between hash batches.
 
 ### `call`
@@ -303,8 +303,8 @@ future language ports:
 ```
 zealot serve --config <node.yaml>   Run one node
 zealot validate <topology.yaml>     Validate a topology file
+zealot generate <topology.yaml> [flags]   Render Kubernetes manifests
 zealot version                      Print version
-zealot generate                     Coming in M4 (see PLAN.md)
 ```
 
 ## Topology files
@@ -337,6 +337,53 @@ Defaults applied during validation: `namespace` ← `name`, `replicas` ← 1,
 datastore `type` inferred from the name for `postgres`/`redis`, images
 default to `postgres:16` / `redis:7`.
 
+## Kubernetes manifests
+
+`zealot generate` turns a topology into deployable Kubernetes manifests — the
+topology is validated first, so `generate` never renders a broken graph:
+
+```sh
+zealot generate topologies/shop-demo.yaml --out k8s/
+kubectl apply -f k8s/
+```
+
+```
+--out <dir>               output directory (default "k8s")
+--image <img>             zealot container image (default "zealot:latest")
+--nodeport                expose the load entrypoint on NodePort 30080
+--prometheus-operator     emit a ServiceMonitor per zealot service
+```
+
+The output is one file per service/datastore plus `00-namespace.yaml`:
+
+- **Namespace** — the topology's `namespace`.
+- **Per zealot service**: a **ConfigMap** holding the rendered node config
+  (mounted at `/etc/zealot/node.yaml`), a **Deployment** (replicas and
+  `requests`=`limits` resources from the topology, `/healthz` probes) and a
+  **Service** on port 80 → container `:8080`, so bare `call` targets
+  (`http://api`) resolve via cluster DNS.
+- **Postgres**: PVC (1Gi) + ConfigMap with `seedSQL` mounted into
+  `docker-entrypoint-initdb.d` + Deployment + Service. Credentials are
+  `zealot`/`zealot`; the DSNs baked into node configs match.
+- **Redis**: Deployment + Service.
+- **`--prometheus-operator`**: one **ServiceMonitor** per zealot service
+  (scrapes `/metrics` via the `http` port).
+- **`--nodeport`**: the `load.entrypoint` Service becomes `NodePort` **30080**
+  so k6 outside the cluster can drive load; every other service stays
+  ClusterIP.
+
+Node configs baked into ConfigMaps include only the datastores their
+pipelines actually reference, pointing at the cluster Services
+(`postgres:5432`, `redis:6379`). The manifests are deterministic —
+regenerating from an unchanged topology yields byte-identical output.
+
+Build and smoke-test the container image the Deployments reference:
+
+```sh
+make docker         # multi-stage build → distroless static image
+make docker-smoke   # version + serve + /healthz check in a container
+```
+
 ## Development
 
 ```sh
@@ -344,6 +391,8 @@ make test     # go test ./... (unit; miniredis, no docker needed)
 make e2e      # bats end-to-end tests against examples/ (see below)
 make vet      # go vet ./...
 make run      # build + serve examples/node.yaml
+make docker         # build the zealot:latest container image
+make docker-smoke   # build + verify the image serves a mounted config
 ```
 
 ### End-to-end tests
