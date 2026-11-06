@@ -187,7 +187,12 @@ service names resolve via cluster DNS (`http://api.zealot-demo.svc.cluster.local
    name-collision validation; golden-file tests (`go test
    ./internal/generate/ -update`); multi-stage distroless Dockerfile,
    `make docker` / `make docker-smoke`; bats e2e
-5. **M5 — Demo kit**: example `shop-demo` topology, k6 script, README walkthrough
+5. **M5 — Demo kit** ✅ (2026-11-06): `k6/shop-demo.js` (drives the load
+   entrypoint, mirrors `load.k6` vus/duration, stamps `X-Request-ID:
+   k6-<vu>-<iteration>` for log tracing, tolerates auth's 2% injected
+   faults); README Kubernetes walkthrough (build → generate → apply → k6 →
+   observe); fixed shop-demo auth fault ordering (fault after respond so
+   injected 500s stick); e2e sync + live-k6 smoke tests
 6. **M6 — SPEC.md**: freeze behavior/metrics spec v1 for future language ports
 
 ## Open points (deferred)

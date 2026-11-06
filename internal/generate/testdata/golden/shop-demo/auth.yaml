@@ -16,12 +16,12 @@ data:
               pipeline:
                 - cpu:
                     duration: 10ms
-                - fault:
-                    rate: 0.02
-                    status: 500
                 - respond:
                     status: 200
                     body: '{"service":"auth"}'
+                - fault:
+                    rate: 0.02
+                    status: 500
 ---
 apiVersion: apps/v1
 kind: Deployment

@@ -9,9 +9,9 @@ Every node's behaviour — latency, CPU work, upstream calls, faults, response
 shape — is defined entirely in YAML, so arbitrary service topologies can be
 assembled from a single binary.
 
-> Status: **M4 complete** (core node, Postgres/Redis query steps, topology
-> schema + validation, Kubernetes manifest generator). See [PLAN.md](PLAN.md)
-> for the full roadmap (k6 demo kit, spec freeze).
+> Status: **M5 complete** (core node, Postgres/Redis query steps, topology
+> schema + validation, Kubernetes manifest generator, k6 demo kit). See
+> [PLAN.md](PLAN.md) for the full roadmap (spec freeze).
 
 ## Build
 
@@ -383,6 +383,66 @@ Build and smoke-test the container image the Deployments reference:
 make docker         # multi-stage build → distroless static image
 make docker-smoke   # version + serve + /healthz check in a container
 ```
+
+## Demo walkthrough: shop-demo on Kubernetes
+
+The full kit is [topologies/shop-demo.yaml](topologies/shop-demo.yaml) plus
+[k6/shop-demo.js](k6/shop-demo.js). You need `docker`, `kubectl`, a local
+cluster (kind, minikube, k3d, ...) and
+[k6](https://grafana.com/docs/k6/latest/set-up/install-k6/).
+
+```sh
+# 1. Build the zealot image and make it visible to the cluster
+make docker
+kind load docker-image zealot:latest      # minikube: minikube image load zealot:latest
+
+# 2. Generate and deploy the topology (--nodeport ⇒ frontend on :30080)
+./bin/zealot generate topologies/shop-demo.yaml --out k8s/ --nodeport
+kubectl apply -f k8s/
+kubectl -n zealot-demo rollout status deploy/frontend
+
+# 3. Reach the frontend (works on any cluster flavor)
+kubectl -n zealot-demo port-forward svc/frontend 30080:80 &
+
+# 4. Drive load — 50 VUs for 5m, mirroring the topology's load.k6 block
+k6 run k6/shop-demo.js
+```
+
+If your cluster runs the Prometheus Operator, regenerate with
+`--prometheus-operator` so every zealot service gets a ServiceMonitor and is
+scraped automatically. Where NodePorts are directly routable (many local
+clusters), skip the port-forward and hit `http://<node-ip>:30080` — the
+script's default.
+
+What you should see:
+
+- **~2% of requests fail** with `502` — auth's injected faults
+  (`fault: { rate: 0.02, status: 500 }`) propagate through the failFast call
+  chain (`auth` → `api` → `frontend`). The k6 threshold tolerates them; that
+  failure rate is the resilience demo, not a bug.
+- **Request flow in metrics** (scrape any pod's `/metrics`, e.g.
+  `kubectl -n zealot-demo port-forward svc/api 8080:80`):
+  - `zealot_request_duration_seconds{service="frontend"}` ≈ delay + slowest
+    of the parallel `api`/`cart` calls
+  - `zealot_step_duration_seconds{step_type="query"}` and
+    `zealot_datastore_duration_seconds` — the cache-aside pattern:
+    Redis `GET` then Postgres `SELECT` per request
+  - `zealot_upstream_requests_total{service="api",status="500"}` — auth's
+    injected faults as seen by api, and
+    `zealot_upstream_requests_total{service="frontend",status="502"}` —
+    api's resulting failures as seen by frontend
+- **One request across the graph**: k6 stamps every request with
+  `X-Request-ID: k6-<vu>-<iteration>`; follow it in the JSON logs —
+  `kubectl -n zealot-demo logs deploy/api | jq 'select(.request_id == "k6-7-42")'`
+- **CPU throttling**: `frontend` runs with `resources: { cpu: 250m }`. Lower
+  a service's `resources.cpu` in the topology, regenerate, re-apply, and
+  watch `container_cpu_cfs_throttled_seconds_total` climb under load.
+
+Tear down with `kubectl delete namespace zealot-demo`.
+
+The same script works against any zealot node — no cluster required:
+`k6 run -e ZEALOT_BASE_URL=http://localhost:8080 k6/shop-demo.js` while
+`make run` (or the [chaining example](#chaining-instances)) is up.
 
 ## Development
 

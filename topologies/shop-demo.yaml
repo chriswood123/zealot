@@ -57,8 +57,10 @@ services:
       - path: /
         pipeline:
           - cpu: { duration: 10ms }
-          - fault: { rate: 0.02, status: 500 }   # 2% errors for resilience demos
+          # fault after respond so the injected 500 sticks (see README):
+          # ~2% of requests surface as 502s through the failFast fan-out.
           - respond: { status: 200, body: '{"service":"auth"}' }
+          - fault: { rate: 0.02, status: 500 }
 
 load:
   entrypoint: frontend

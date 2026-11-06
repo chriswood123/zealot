@@ -22,8 +22,8 @@ code branches. Sources of truth: `PLAN.md` (roadmap, milestones M1–M6) and
   and must stay identical for future language ports. Never rename; additive
   changes only.
 - **Milestone gating**: don't implement ahead-of-milestone features
-  (demo kit, SPEC freeze) without the user asking; mark milestones done in
-  `PLAN.md` when landed. M1–M4 are complete.
+  (SPEC freeze) without the user asking; mark milestones done in
+  `PLAN.md` when landed. M1–M5 are complete.
 
 ## Architecture notes (non-obvious)
 
@@ -65,6 +65,10 @@ code branches. Sources of truth: `PLAN.md` (roadmap, milestones M1–M6) and
   generated ConfigMaps free of empty fields; they don't affect loading.
   Service and datastore names must not collide (they become k8s Services
   in one namespace) — enforced in `topology.Validate`.
+- The k6 demo script (`k6/shop-demo.js`) mirrors `load.k6` vus/duration
+  from `topologies/shop-demo.yaml` — change one, change the other (an e2e
+  test greps both). Editing that topology's pipelines also changes the
+  generate goldens: rerun `go test ./internal/generate/ -update`.
 
 ## Operational gotchas
 
