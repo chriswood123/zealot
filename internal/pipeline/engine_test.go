@@ -176,6 +176,75 @@ func TestCallPropagatesRequestID(t *testing.T) {
 	}
 }
 
+// SPEC §4 (call): incoming W3C traceparent/tracestate/baggage headers are
+// forwarded to every upstream target.
+func TestCallPropagatesTraceHeaders(t *testing.T) {
+	got := map[string]string{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for _, h := range []string{"traceparent", "tracestate", "baggage"} {
+			got[h] = r.Header.Get(h)
+		}
+	}))
+	defer srv.Close()
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
+	req.Header.Set("tracestate", "rojo=00f067aa0ba902b7")
+	req.Header.Set("baggage", "userId=alice")
+	e := newEngine()
+	if _, err := e.Run(req.Context(), "/", []config.Step{
+		{Call: &config.CallStep{Targets: []config.Target{{URL: srv.URL}}}},
+	}, req); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got["traceparent"] != "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01" ||
+		got["tracestate"] != "rojo=00f067aa0ba902b7" ||
+		got["baggage"] != "userId=alice" {
+		t.Fatalf("trace headers not forwarded: %v", got)
+	}
+}
+
+// SPEC §4 (call): any received HTTP status — including 5xx — is a
+// successful call; only transport errors fail the step under failFast.
+func TestCallStepUpstream5xxIsNotAnError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	res, err := runPipeline(newEngine(), []config.Step{
+		{Call: &config.CallStep{Targets: []config.Target{{URL: srv.URL}}}},
+		{Respond: &config.RespondStep{Status: 200, Body: "ok"}},
+	})
+	if err != nil {
+		t.Fatalf("upstream 500 must not fail the call step: %v", err)
+	}
+	if res.Status != 200 || string(res.Body) != "ok" {
+		t.Fatalf("unexpected result %+v", res)
+	}
+}
+
+// SPEC §4 (call): failFast evaluates after ALL targets were attempted — it
+// never short-circuits the target list.
+func TestCallStepFailFastAttemptsAllTargets(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+	}))
+	defer srv.Close()
+
+	// First target unreachable (transport error), second reachable.
+	steps := []config.Step{
+		{Call: &config.CallStep{Targets: []config.Target{{URL: "127.0.0.1:1"}, {URL: srv.URL}}}},
+	}
+	if _, err := runPipeline(newEngine(), steps); err == nil {
+		t.Fatal("expected failFast error")
+	}
+	if hits.Load() != 1 {
+		t.Fatalf("reachable target hit %d times, want 1 (failFast must not short-circuit)", hits.Load())
+	}
+}
+
 func TestFaultStepAlways(t *testing.T) {
 	steps := []config.Step{{Fault: &config.FaultStep{Rate: 1.0, Status: 500}}}
 	res, err := runPipeline(newEngine(), steps)

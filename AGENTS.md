@@ -17,13 +17,14 @@ code branches. Sources of truth: `PLAN.md` (roadmap, milestones M1–M6) and
 
 ## Hard constraints
 
-- **Spec stability**: metric names/labels (`zealot_*`) and the JSON response
-  envelope (`service`, `request_id`, `status`, `body`, `padding`) are SPEC v1
-  and must stay identical for future language ports. Never rename; additive
-  changes only.
-- **Milestone gating**: don't implement ahead-of-milestone features
-  (SPEC freeze) without the user asking; mark milestones done in
-  `PLAN.md` when landed. M1–M5 are complete.
+- **Spec stability**: `docs/SPEC.md` v1 is FROZEN — metric names/labels
+  (`zealot_*`), the JSON response envelope (`service`, `request_id`,
+  `status`, `body`, `padding`), pipeline semantics (notably: downstream
+  statuses never propagate — only transport errors fail a `call` step),
+  healthz body, log fields. Never rename; additive changes only.
+- **Milestone gating**: M1–M6 are complete; the roadmap in `PLAN.md` is
+  done. New work is post-plan — confirm scope with the user before adding
+  features, and route any behavior change through `docs/SPEC.md`.
 
 ## Architecture notes (non-obvious)
 
@@ -69,6 +70,11 @@ code branches. Sources of truth: `PLAN.md` (roadmap, milestones M1–M6) and
   from `topologies/shop-demo.yaml` — change one, change the other (an e2e
   test greps both). Editing that topology's pipelines also changes the
   generate goldens: rerun `go test ./internal/generate/ -update`.
+- `e2e/spec.bats` + the `SPEC §`-referenced unit tests in
+  `internal/pipeline` are conformance tests: they pin the frozen clauses
+  of `docs/SPEC.md` (exact bodies, buckets, 5xx-not-a-failure, failFast
+  attempts all targets, trace-header forwarding). If one fails, the code
+  drifted from the spec — that's a bug, not a test update.
 
 ## Operational gotchas
 

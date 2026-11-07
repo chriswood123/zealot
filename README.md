@@ -9,9 +9,10 @@ Every node's behaviour — latency, CPU work, upstream calls, faults, response
 shape — is defined entirely in YAML, so arbitrary service topologies can be
 assembled from a single binary.
 
-> Status: **M5 complete** (core node, Postgres/Redis query steps, topology
-> schema + validation, Kubernetes manifest generator, k6 demo kit). See
-> [PLAN.md](PLAN.md) for the full roadmap (spec freeze).
+> Status: **M6 complete** — all milestones done. Behavior and metrics are
+> frozen by [docs/SPEC.md](docs/SPEC.md) v1, the contract future language
+> ports (zealot-py, zealot-node, ...) must reproduce. See
+> [PLAN.md](PLAN.md) for the roadmap.
 
 ## Build
 
@@ -288,8 +289,9 @@ request can be followed through the graph in the JSON access logs:
 
 ## Metrics
 
-All names and labels are part of the spec and will stay identical across
-future language ports:
+All names, labels and histogram buckets are frozen by
+[docs/SPEC.md](docs/SPEC.md) v1 and will stay identical across future
+language ports:
 
 - `zealot_requests_total{service,endpoint,status}`
 - `zealot_request_duration_seconds{service,endpoint}` (histogram)
@@ -416,10 +418,14 @@ script's default.
 
 What you should see:
 
-- **~2% of requests fail** with `502` — auth's injected faults
-  (`fault: { rate: 0.02, status: 500 }`) propagate through the failFast call
-  chain (`auth` → `api` → `frontend`). The k6 threshold tolerates them; that
-  failure rate is the resilience demo, not a bug.
+- **auth's injected faults — in metrics, not in k6.** `fault: { rate: 0.02,
+  status: 500 }` makes ~2% of auth's own responses 500s. Per
+  [SPEC §4](docs/SPEC.md), downstream statuses never propagate: a call step
+  fails only on transport errors, so api and the frontend stay green and k6
+  keeps passing. The chaos shows up in the metrics instead:
+  `zealot_requests_total{service="auth",status="500"}` (≈2% of auth's
+  requests) and `zealot_upstream_requests_total{service="api",target="auth",status="500"}`
+  tracking every one of them.
 - **Request flow in metrics** (scrape any pod's `/metrics`, e.g.
   `kubectl -n zealot-demo port-forward svc/api 8080:80`):
   - `zealot_request_duration_seconds{service="frontend"}` ≈ delay + slowest
@@ -427,10 +433,8 @@ What you should see:
   - `zealot_step_duration_seconds{step_type="query"}` and
     `zealot_datastore_duration_seconds` — the cache-aside pattern:
     Redis `GET` then Postgres `SELECT` per request
-  - `zealot_upstream_requests_total{service="api",status="500"}` — auth's
-    injected faults as seen by api, and
-    `zealot_upstream_requests_total{service="frontend",status="502"}` —
-    api's resulting failures as seen by frontend
+  - `zealot_upstream_requests_total{service="frontend",status="200"}` — the
+    parallel fan-out to api and cart
 - **One request across the graph**: k6 stamps every request with
   `X-Request-ID: k6-<vu>-<iteration>`; follow it in the JSON logs —
   `kubectl -n zealot-demo logs deploy/api | jq 'select(.request_id == "k6-7-42")'`

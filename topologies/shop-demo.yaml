@@ -57,8 +57,11 @@ services:
       - path: /
         pipeline:
           - cpu: { duration: 10ms }
-          # fault after respond so the injected 500 sticks (see README):
-          # ~2% of requests surface as 502s through the failFast fan-out.
+          # fault after respond so the injected 500 sticks (see README).
+          # ~2% of auth's responses are 500s — watch them in auth's
+          # requests_total and api's upstream_requests_total. Downstream
+          # statuses don't propagate (docs/SPEC.md §4), so the frontend
+          # stays green.
           - respond: { status: 200, body: '{"service":"auth"}' }
           - fault: { rate: 0.02, status: 500 }
 

@@ -193,10 +193,22 @@ service names resolve via cluster DNS (`http://api.zealot-demo.svc.cluster.local
    faults); README Kubernetes walkthrough (build → generate → apply → k6 →
    observe); fixed shop-demo auth fault ordering (fault after respond so
    injected 500s stick); e2e sync + live-k6 smoke tests
-6. **M6 — SPEC.md**: freeze behavior/metrics spec v1 for future language ports
+6. **M6 — SPEC.md** ✅ (2026-11-06): `docs/SPEC.md` v1 frozen — node config
+   schema, startup fail-fast, request-ID/routing/pipeline semantics, all six
+   steps, templating/grammars, HTTP surface (envelope, padding math,
+   healthz, 502 shape), metrics with exact labels + buckets, log fields.
+   Spec-review conformance tests lock the subtle clauses: upstream 5xx ≠
+   call failure (only transport errors fail; statuses never propagate),
+   failFast attempts all targets, trace-header forwarding, exact
+   envelope/padding/healthz bodies (`e2e/spec.bats` +
+   `internal/pipeline` tests). M5 docs corrected to match (faults visible
+   in metrics, not at the frontend). OTel span emission deferred (v1
+   forwards trace headers only — SPEC §8).
 
 ## Open points (deferred)
 
 - Whether `zealot generate` should also emit docker-compose later
   (the generator will be interface-based so it's cheap to add)
-- Whether OpenTelemetry tracing lands in M6 or is deferred further
+- OpenTelemetry span emission: deferred past M6. SPEC v1 freezes
+  trace-header *forwarding* only (SPEC §8); span emission would be a
+  spec minor/major version discussion.

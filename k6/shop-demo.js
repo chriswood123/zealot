@@ -20,9 +20,11 @@ export const options = {
   vus: 50, // load.k6.vus in topologies/shop-demo.yaml
   duration: '5m', // load.k6.duration
   thresholds: {
-    // auth injects 2% 500s; with failFast call steps they surface as 502s
-    // at the frontend. A small failure rate is the demo, not a regression.
-    http_req_failed: ['rate<0.10'],
+    // SPEC §4: downstream statuses never propagate, so auth's injected
+    // 500s are visible in zealot's metrics, not here — the frontend should
+    // stay green. Failures mean a service is DOWN (transport error), which
+    // is a real problem, not part of the demo.
+    http_req_failed: ['rate<0.01'],
     http_req_duration: ['p(95)<1000'],
   },
 };
@@ -39,7 +41,8 @@ export default function () {
   });
   check(res, {
     'status is 200': (r) => r.status === 200,
-    // Faulted requests return {"error": ...} instead of the envelope.
+    // Pipeline failures (transport errors upstream) return {"error": ...}
+    // instead of the envelope — see SPEC §6.4.
     'standard envelope': (r) =>
       r.status !== 200 || (r.json('service') === 'frontend' && !!r.json('request_id')),
   });
